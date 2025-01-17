@@ -239,14 +239,23 @@ impl Client {
         auth_token: Arc<RwLock<Option<HeaderValue>>>,
         options: Option<ConnectOptions>,
     ) -> Self {
-        let kv = KvClient::new(channel.clone(), auth_token.clone());
-        let watch = WatchClient::new(channel.clone(), auth_token.clone());
+        let mut kv = KvClient::new(channel.clone(), auth_token.clone());
+        let mut watch = WatchClient::new(channel.clone(), auth_token.clone());
         let lease = LeaseClient::new(channel.clone(), auth_token.clone());
         let lock = LockClient::new(channel.clone(), auth_token.clone());
         let auth = AuthClient::new(channel.clone(), auth_token.clone());
         let cluster = ClusterClient::new(channel.clone(), auth_token.clone());
         let maintenance = MaintenanceClient::new(channel.clone(), auth_token.clone());
         let election = ElectionClient::new(channel, auth_token);
+
+        // If specified in the options, set the max message size for encoding and decoding.
+        if let Some(size) = options.as_ref().and_then(|o| o.max_encoding_message_size) {
+            kv = kv.max_encoding_message_size(size);
+        }
+        if let Some(size) = options.as_ref().and_then(|o| o.max_decoding_message_size) {
+            kv = kv.max_decoding_message_size(size);
+            watch = watch.max_decoding_message_size(size);
+        }
 
         Self {
             kv,
@@ -766,6 +775,14 @@ pub struct ConnectOptions {
     tls: Option<TlsOptions>,
     #[cfg(feature = "tls-openssl")]
     otls: Option<OpenSslResult<OpenSslConnector>>,
+    /// Limits the maximum size of a decoded message.
+    ///
+    /// Default: `4MB`
+    max_decoding_message_size: Option<usize>,
+    /// Limits the maximum size of an encoded message.
+    ///
+    /// Default: `usize::MAX`
+    max_encoding_message_size: Option<usize>,
 }
 
 impl ConnectOptions {
@@ -839,6 +856,24 @@ impl ConnectOptions {
         self
     }
 
+    /// Limits the maximum size of a decoded message.
+    ///
+    /// Default: `4MB`
+    #[inline]
+    pub fn with_max_decoding_message_size(mut self, size: usize) -> Self {
+        self.max_decoding_message_size = Some(size);
+        self
+    }
+
+    /// Limits the maximum size of an encoded message.
+    ///
+    /// Default: `usize::MAX`
+    #[inline]
+    pub fn with_max_encoding_message_size(mut self, size: usize) -> Self {
+        self.max_encoding_message_size = Some(size);
+        self
+    }
+
     /// Creates a `ConnectOptions`.
     #[inline]
     pub const fn new() -> Self {
@@ -853,6 +888,8 @@ impl ConnectOptions {
             tls: None,
             #[cfg(feature = "tls-openssl")]
             otls: None,
+            max_encoding_message_size: None,
+            max_decoding_message_size: None,
         }
     }
 }
